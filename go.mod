@@ -1,4 +1,4 @@
-module github.com/claes/routerboard-mqtt
+module github.com/claes/routeros-mqtt
 
 go 1.21
 

@@ -7,19 +7,19 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/claes/routerboard-mqtt/lib"
+	"github.com/claes/routeros-mqtt/lib"
 )
 
 var debug *bool
 
 func printHelp() {
-	fmt.Println("Usage: routerboard-mqtt [OPTIONS]")
+	fmt.Println("Usage: routeros-mqtt [OPTIONS]")
 	fmt.Println("Options:")
 	flag.PrintDefaults()
 }
 
 func main() {
-	address := flag.String("address", "", "Mikrotik address")
+	address := flag.String("address", "", "Mikrotik TLS address:port")
 	username := flag.String("username", "", "Username")
 	password := flag.String("password", "", "Password")
 	topicPrefix := flag.String("topicPrefix", "", "MQTT topic prefix to use")
