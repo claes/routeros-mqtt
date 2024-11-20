@@ -24,7 +24,6 @@ type RouterOSMQTTBridge struct {
 	MqttClient           mqtt.Client
 	RouterOSClient       *routeros.Client
 	TopicPrefix          string
-	MQTTClientConfig     MQTTClientConfig
 	RouterOSClientConfig RouterOSClientConfig
 }
 
@@ -56,13 +55,7 @@ func CreateMQTTClient(mqttBroker string) (mqtt.Client, error) {
 	return client, nil
 }
 
-func NewRouterOSMQTTBridge(routerOSConfig RouterOSClientConfig, mqttClientConfig MQTTClientConfig, topicPrefix string) (*RouterOSMQTTBridge, error) {
-
-	mqttClient, err := CreateMQTTClient(mqttClientConfig.MQTTBroker)
-	if err != nil {
-		slog.Error("Error creating mqtt client", "error", err, "broker", mqttClientConfig.MQTTBroker)
-		return nil, err
-	}
+func NewRouterOSMQTTBridge(routerOSConfig RouterOSClientConfig, mqttClient mqtt.Client, topicPrefix string) (*RouterOSMQTTBridge, error) {
 
 	routerOSClient, err := CreateRouterOSClient(routerOSConfig)
 	if err != nil {
@@ -74,7 +67,6 @@ func NewRouterOSMQTTBridge(routerOSConfig RouterOSClientConfig, mqttClientConfig
 		MqttClient:           mqttClient,
 		RouterOSClient:       routerOSClient,
 		TopicPrefix:          topicPrefix,
-		MQTTClientConfig:     mqttClientConfig,
 		RouterOSClientConfig: routerOSConfig,
 	}
 

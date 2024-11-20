@@ -36,10 +36,13 @@ func main() {
 	routerOSClientConfig :=
 		lib.RouterOSClientConfig{RouterAddress: *routerAddress, Username: *username, Password: *password}
 
-	mqttClientConfig :=
-		lib.MQTTClientConfig{MQTTBroker: *mqttBroker}
+	mqttClient, err := lib.CreateMQTTClient(*mqttBroker)
+	if err != nil {
+		slog.Error("Error creating MQTT client", "error", err)
+		os.Exit(1)
+	}
 
-	bridge, err := lib.NewRouterOSMQTTBridge(routerOSClientConfig, mqttClientConfig, *topicPrefix)
+	bridge, err := lib.NewRouterOSMQTTBridge(routerOSClientConfig, mqttClient, *topicPrefix)
 
 	if err != nil {
 		slog.Error("Error creating RouterOS-MQTT bridge", "error", err)
