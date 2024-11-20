@@ -21,38 +21,65 @@ type WifiClient struct {
 }
 
 type RouterOSMQTTBridge struct {
-	MqttClient     mqtt.Client
-	RouterOSClient *routeros.Client
-	TopicPrefix    string
-	//sendMutex      sync.Mutex
+	MqttClient           mqtt.Client
+	RouterOSClient       *routeros.Client
+	TopicPrefix          string
+	MQTTClientConfig     MQTTClientConfig
+	RouterOSClientConfig RouterOSClientConfig
 }
 
-func CreateRouterOSClient(address, username, password string) (*routeros.Client, error) {
-	return routeros.DialTLS(address, username, password, &tls.Config{
+type RouterOSClientConfig struct {
+	RouterAddress, Username, Password string
+}
+
+type MQTTClientConfig struct {
+	MQTTBroker string
+}
+
+func CreateRouterOSClient(config RouterOSClientConfig) (*routeros.Client, error) {
+	client, err := routeros.DialTLS(config.RouterAddress, config.Username, config.Password, &tls.Config{
 		InsecureSkipVerify: true,
 	})
+	return client, err
 }
 
 func CreateMQTTClient(mqttBroker string) (mqtt.Client, error) {
 	slog.Info("Creating MQTT client", "broker", mqttBroker)
-	opts := mqtt.NewClientOptions().AddBroker(mqttBroker)
+	opts := mqtt.NewClientOptions().AddBroker(mqttBroker).SetAutoReconnect(true)
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		slog.Error("Could not connect to broker", "mqttBroker", mqttBroker, "error", token.Error())
 		return nil, token.Error()
 	}
 	slog.Info("Connected to MQTT broker", "mqttBroker", mqttBroker)
+
 	return client, nil
 }
 
-func NewRouterOSMQTTBridge(routerOSClient *routeros.Client, mqttClient mqtt.Client, topicPrefix string) *RouterOSMQTTBridge {
+func NewRouterOSMQTTBridge(routerOSConfig RouterOSClientConfig, mqttClientConfig MQTTClientConfig, topicPrefix string) (*RouterOSMQTTBridge, error) {
+
+	mqttClient, err := CreateMQTTClient(mqttClientConfig.MQTTBroker)
+	if err != nil {
+		slog.Error("Error creating mqtt client", "error", err, "broker", mqttClientConfig.MQTTBroker)
+		return nil, err
+	}
+
+	routerOSClient, err := CreateRouterOSClient(routerOSConfig)
+	if err != nil {
+		slog.Error("Error creating RouterOS client", "error", err, "address", routerOSConfig.RouterAddress)
+		return nil, err
+	}
 
 	bridge := &RouterOSMQTTBridge{
-		MqttClient:     mqttClient,
-		RouterOSClient: routerOSClient,
-		TopicPrefix:    topicPrefix,
+		MqttClient:           mqttClient,
+		RouterOSClient:       routerOSClient,
+		TopicPrefix:          topicPrefix,
+		MQTTClientConfig:     mqttClientConfig,
+		RouterOSClientConfig: routerOSConfig,
 	}
-	return bridge
+
+	routerOSClient.Listen()
+	return bridge, nil
 }
 
 func prefixify(topicPrefix, subtopic string) string {
@@ -69,13 +96,13 @@ func (bridge *RouterOSMQTTBridge) PublishMQTT(subtopic string, message string, r
 }
 
 func (bridge *RouterOSMQTTBridge) MainLoop() {
-	go func() {
-		for {
-			reply, err := bridge.RouterOSClient.Run("/interface/wireless/registration-table/print")
-			if err != nil {
-				slog.Error("Could not retrieve registration table", "error", err)
-			}
-
+	for {
+		reconnectRouterOsClient := false
+		reply, err := bridge.RouterOSClient.Run("/interface/wireless/registration-table/print")
+		if err != nil {
+			slog.Error("Could not retrieve registration table", "error", err)
+			reconnectRouterOsClient = true
+		} else {
 			var clients []WifiClient
 			for _, re := range reply.Re {
 				client := WifiClient{
@@ -87,20 +114,27 @@ func (bridge *RouterOSMQTTBridge) MainLoop() {
 				}
 				clients = append(clients, client)
 			}
-
 			jsonData, err := json.MarshalIndent(clients, "", "    ")
 			if err != nil {
 				slog.Error("Failed to create json", "error", err)
 				continue
 			}
-
 			bridge.PublishMQTT("routeros/wificlients", string(jsonData), false)
-
-			time.Sleep(30 * time.Second)
-			bridge.reconnectIfNeeded()
+			bridge.MqttClient.IsConnected()
 		}
-	}()
-}
 
-func (bridge *RouterOSMQTTBridge) reconnectIfNeeded() {
+		time.Sleep(30 * time.Second)
+		if reconnectRouterOsClient {
+			slog.Error("Reconnecting RouterOS client")
+			err = bridge.RouterOSClient.Close()
+			if err != nil {
+				slog.Error("Error when closing RouterOS client", "error", err)
+			}
+			client, err := CreateRouterOSClient(bridge.RouterOSClientConfig)
+			if err != nil {
+				slog.Error("Error when recreating RouterOS client", "error", err)
+			}
+			bridge.RouterOSClient = client
+		}
+	}
 }

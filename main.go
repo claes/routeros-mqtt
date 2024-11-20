@@ -19,7 +19,7 @@ func printHelp() {
 }
 
 func main() {
-	address := flag.String("address", "", "Mikrotik TLS address:port")
+	routerAddress := flag.String("address", "", "Mikrotik TLS address:port")
 	username := flag.String("username", "", "Username")
 	password := flag.String("password", "", "Password")
 	topicPrefix := flag.String("topicPrefix", "", "MQTT topic prefix to use")
@@ -33,18 +33,18 @@ func main() {
 		os.Exit(0)
 	}
 
-	routerOSClient, err := lib.CreateRouterOSClient(*address, *username, *password)
-	if err != nil {
-		slog.Error("Error creating RouterOS client", "error", err, "address", *address)
-		os.Exit(1)
-	}
+	routerOSClientConfig :=
+		lib.RouterOSClientConfig{RouterAddress: *routerAddress, Username: *username, Password: *password}
 
-	mqttClient, err := lib.CreateMQTTClient(*mqttBroker)
+	mqttClientConfig :=
+		lib.MQTTClientConfig{MQTTBroker: *mqttBroker}
+
+	bridge, err := lib.NewRouterOSMQTTBridge(routerOSClientConfig, mqttClientConfig, *topicPrefix)
+
 	if err != nil {
-		slog.Error("Error creating mqtt client", "error", err, "broker", *mqttBroker)
+		slog.Error("Error creating RouterOS-MQTT bridge", "error", err)
 		os.Exit(1)
 	}
-	bridge := lib.NewRouterOSMQTTBridge(routerOSClient, mqttClient, *topicPrefix)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
